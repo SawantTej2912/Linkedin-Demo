@@ -1,0 +1,5 @@
+# Root-level requirements for the projectDS virtual environment
+# Install with: pip install -r requirements.txt
+
+# AI Agent Service (FastAPI)
+-r ai-agents/requirements.txt

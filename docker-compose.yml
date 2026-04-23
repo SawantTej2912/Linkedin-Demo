@@ -1,0 +1,340 @@
+version: "3.9"
+
+# ═══════════════════════════════════════════════════════════════
+#  LinkedIn DS — Docker Compose
+#
+#  HOW IT WORKS:
+#  1. Infrastructure (MySQL, MongoDB, Redis, Kafka) starts first
+#  2. Healthchecks confirm each DB is truly ready before services start
+#  3. All services connect to each other using their container names
+#     e.g. mysql:3306, kafka:9092, redis:6379
+#
+#  TO START EVERYTHING:
+#    docker-compose up --build
+#
+#  TO STOP:
+#    docker-compose down
+#
+#  TO WIPE ALL DATA AND RESTART FRESH:
+#    docker-compose down -v && docker-compose up --build
+# ═══════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - linkedin-net
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"   # 29092 = host-accessible port (use this for local dev)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Two listeners: one for inside Docker (kafka:9092), one for host machine (localhost:29092)
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - linkedin-net
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"     # Open http://localhost:8080 to browse Kafka topics
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    networks:
+      - linkedin-net
+
+  mysql:
+    build: ./databases/mysql
+    container_name: mysql
+    ports:
+      - "3307:3306"     # Host port 3307 → container port 3306
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin_ds}
+      MYSQL_USER: ${MYSQL_USER:-appuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-apppassword}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - linkedin-net
+    healthcheck:
+      # Wait until MySQL is accepting connections from appuser
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "appuser", "--password=apppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  mongodb:
+    build: ./databases/mongodb
+    container_name: mongodb
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-appuser}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-apppassword}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-linkedin_ds_logs}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - linkedin-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - linkedin-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Microservices ───────────────────────────────────────────────────────────
+  # Each service waits for its required infrastructure to be healthy first.
+
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: api-gateway
+    ports:
+      - "${API_GATEWAY_PORT:-3000}:3000"
+    environment:
+      - PROFILE_SERVICE_URL=http://profile-service:3001
+      - JOB_SERVICE_URL=http://job-service:3002
+      - APPLICATION_SERVICE_URL=http://application-service:3003
+      - MESSAGING_SERVICE_URL=http://messaging-service:3004
+      - CONNECTION_SERVICE_URL=http://connection-service:3005
+      - ANALYTICS_SERVICE_URL=http://analytics-service:3006
+      - AI_AGENT_URL=http://ai-agent-service:8000
+      - JWT_SECRET=${JWT_SECRET:-changeme}
+      - REDIS_HOST=redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  profile-service:
+    build: ./services/profile-service
+    container_name: profile-service
+    ports:
+      - "${PROFILE_SERVICE_PORT:-3001}:3001"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-linkedin_ds}
+      - MYSQL_USER=${MYSQL_USER:-appuser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-apppassword}
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_HOST=redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  job-service:
+    build: ./services/job-service
+    container_name: job-service
+    ports:
+      - "${JOB_SERVICE_PORT:-3002}:3002"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-linkedin_ds}
+      - MYSQL_USER=${MYSQL_USER:-appuser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-apppassword}
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_HOST=redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  application-service:
+    build: ./services/application-service
+    container_name: application-service
+    ports:
+      - "${APPLICATION_SERVICE_PORT:-3003}:3003"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-linkedin_ds}
+      - MYSQL_USER=${MYSQL_USER:-appuser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-apppassword}
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  messaging-service:
+    build: ./services/messaging-service
+    container_name: messaging-service
+    ports:
+      - "${MESSAGING_SERVICE_PORT:-3004}:3004"
+    environment:
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=${MONGO_DATABASE:-linkedin_ds_logs}
+      - MONGO_USER=${MONGO_USER:-appuser}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:-apppassword}
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  connection-service:
+    build: ./services/connection-service
+    container_name: connection-service
+    ports:
+      - "${CONNECTION_SERVICE_PORT:-3005}:3005"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-linkedin_ds}
+      - MYSQL_USER=${MYSQL_USER:-appuser}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-apppassword}
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  analytics-service:
+    build: ./services/analytics-service
+    container_name: analytics-service
+    ports:
+      - "${ANALYTICS_SERVICE_PORT:-3006}:3006"
+    environment:
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=${MONGO_DATABASE:-linkedin_ds_logs}
+      - MONGO_USER=${MONGO_USER:-appuser}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:-apppassword}
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_GROUP_ID=analytics-consumer-group
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  ai-agent-service:
+    build: ./ai-agents
+    container_name: ai-agent-service
+    ports:
+      - "${AI_AGENT_SERVICE_PORT:-8000}:8000"
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_HOST=redis
+      - PROFILE_SERVICE_URL=http://profile-service:3001
+      - JOB_SERVICE_URL=http://job-service:3002
+      - APPLICATION_SERVICE_URL=http://application-service:3003
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=${MONGO_DATABASE:-linkedin_ds_logs}
+      - MONGO_USER=${MONGO_USER:-appuser}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:-apppassword}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - AI_INLINE_FALLBACK=${AI_INLINE_FALLBACK:-true}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+  # ── Client ──────────────────────────────────────────────────────────────────
+
+  client:
+    build: ./client
+    container_name: client
+    ports:
+      - "80:80"         # Open http://localhost in browser
+    depends_on:
+      - api-gateway
+    networks:
+      - linkedin-net
+
+volumes:
+  mysql_data:    # MySQL data persists across restarts
+  mongo_data:    # MongoDB data persists across restarts
+  redis_data:    # Redis data persists across restarts
+
+networks:
+  linkedin-net:
+    driver: bridge

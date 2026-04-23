@@ -1,0 +1,131 @@
+[
+  {
+    "name": "profile.updated",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "profile-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "profile.viewed",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "profile-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "job.posted",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "job-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "job.viewed",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "job-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "job.saved",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "job-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "job.closed",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "job-service",
+    "consumers": [
+      "analytics-service",
+      "application-service"
+    ]
+  },
+  {
+    "name": "application.submitted",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "application-service",
+    "consumers": [
+      "analytics-service",
+      "ai-agent-service"
+    ]
+  },
+  {
+    "name": "application.status.changed",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "application-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "message.sent",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "messaging-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "connection.requested",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "connection-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "connection.accepted",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "connection-service",
+    "consumers": [
+      "analytics-service",
+      "profile-service"
+    ]
+  },
+  {
+    "name": "ai.requests",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "ai-agent-service",
+    "consumers": [
+      "ai-agent-service"
+    ]
+  },
+  {
+    "name": "ai.results",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "ai-agent-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  },
+  {
+    "name": "connection.rejected",
+    "partitions": 3,
+    "replication_factor": 1,
+    "producer": "connection-service",
+    "consumers": [
+      "analytics-service"
+    ]
+  }
+]
