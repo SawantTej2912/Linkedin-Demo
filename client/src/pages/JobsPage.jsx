@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { searchJobs, getJob } from '../api/jobApi';
 import { submitApplication, applicationsByMember } from '../api/applicationApi';
 
@@ -68,10 +69,219 @@ const COMPANY_BY_TITLE = {
   'Product Manager – AI':       'Microsoft',
 };
 
+function JobsSidebarModule({ title, children, actionLabel, onAction }) {
+  return (
+    <section style={{
+      background: 'white',
+      borderRadius: 12,
+      border: '1px solid #e2e8f0',
+      padding: 14,
+      boxShadow: '0 1px 6px rgba(15,23,42,0.04)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <h4 style={{ margin: 0, fontSize: 14, color: '#0f172a' }}>{title}</h4>
+        {actionLabel && (
+          <button onClick={onAction} style={{ border: 'none', background: 'transparent', color: '#0a66c2', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            {actionLabel}
+          </button>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function JobPreviewCard({ job, onOpen }) {
+  const company = job.company_name || COMPANY_BY_TITLE[job.title] || 'Company';
+  return (
+    <button
+      onClick={() => onOpen(job)}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        border: '1px solid #e2e8f0',
+        background: '#fff',
+        borderRadius: 12,
+        padding: 12,
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        boxShadow: '0 1px 6px rgba(15,23,42,0.04)',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <CompanyLogo name={company} size={38} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {job.title}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 12, color: '#334155', fontWeight: 600 }}>{company}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
+            {job.city}, {job.state} · {job.work_mode}
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <Badge>{job.employment_type}</Badge>
+            <Badge color="#f9fafb" text="#64748b">{timeAgo(job.posted_at)}</Badge>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function JobRecommendationSection({ title, subtitle, jobs, onOpenJob, onShowAll }) {
+  return (
+    <section style={{
+      background: 'white',
+      borderRadius: 14,
+      border: '1px solid #e2e8f0',
+      padding: 16,
+      boxShadow: '0 2px 12px rgba(15,23,42,0.04)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 12 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>{title}</h3>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{subtitle}</p>
+        </div>
+        <button
+          onClick={onShowAll}
+          style={{ height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid #bfdbfe', background: '#f8fbff', color: '#0a66c2', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+          Show all
+        </button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+        {jobs.map(job => <JobPreviewCard key={job.job_id} job={job} onOpen={onOpenJob} />)}
+      </div>
+    </section>
+  );
+}
+
 // ─────────────────────────────────────────────
-//  MAIN COMPONENT
+//  JOBS HOME / DISCOVERY
 // ─────────────────────────────────────────────
 export default function JobsPage() {
+  const navigate = useNavigate();
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await searchJobs({ page: 1, limit: 36 });
+        setJobs(res.data.results || []);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const openJob = (job) => navigate('/jobs/browse', { state: { jobId: job.job_id } });
+  const showAll = (presetFilters = {}) => navigate('/jobs/browse', { state: { filters: presetFilters } });
+
+  const preferenceJobs = jobs
+    .filter(job => ['remote', 'hybrid'].includes((job.work_mode || '').toLowerCase()))
+    .slice(0, 4);
+  const activityJobs = [...jobs]
+    .sort((a, b) => (b.applicants_count || 0) - (a.applicants_count || 0))
+    .slice(0, 4);
+  const featuredJobs = [...jobs]
+    .sort((a, b) => new Date(b.posted_at || 0) - new Date(a.posted_at || 0))
+    .slice(0, 4);
+
+  const userName = localStorage.getItem('user_name') || 'Member';
+  const savedJobsCount = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('saved_jobs_ui') || '[]').length;
+    } catch {
+      return 0;
+    }
+  })();
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16 }}>
+      <aside style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <JobsSidebarModule title="Profile Summary">
+          <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 700, color: '#0f172a' }}>{userName}</div>
+            <div>Keep your profile fresh for better matches.</div>
+          </div>
+        </JobsSidebarModule>
+        <JobsSidebarModule title="Preferences" actionLabel="Update" onAction={() => showAll({ work_mode: 'remote' })}>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+            Work mode, role, and level settings influence every recommendation.
+          </p>
+        </JobsSidebarModule>
+        <JobsSidebarModule title="Job Tracker">
+          <div style={{ fontSize: 12, color: '#64748b' }}>Saved jobs: <strong style={{ color: '#0f172a' }}>{savedJobsCount}</strong></div>
+          <button onClick={() => showAll()} style={{ marginTop: 10, border: '1px solid #cbd5e1', borderRadius: 999, height: 32, padding: '0 12px', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+            View tracked jobs
+          </button>
+        </JobsSidebarModule>
+        <JobsSidebarModule title="Career Insights">
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
+            <li>Remote software roles are trending.</li>
+            <li>Data + AI skills are in high demand.</li>
+            <li>Applications within 48h convert better.</li>
+          </ul>
+        </JobsSidebarModule>
+        <JobsSidebarModule title="Utilities">
+          <button style={{ width: '100%', height: 34, borderRadius: 999, border: 'none', background: '#0a66c2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            Post a free job
+          </button>
+        </JobsSidebarModule>
+      </aside>
+
+      <main style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 24, color: '#0f172a' }}>Discover jobs for you</h2>
+          <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 14 }}>
+            Curated recommendations based on your profile, activity, and market demand.
+          </p>
+        </div>
+
+        {loading ? (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 14, padding: 18, color: '#64748b', fontSize: 14 }}>
+            Loading recommendations...
+          </div>
+        ) : (
+          <>
+            <JobRecommendationSection
+              title="Jobs based on your preferences"
+              subtitle="Matches aligned with your preferred work setup."
+              jobs={preferenceJobs}
+              onOpenJob={openJob}
+              onShowAll={() => showAll({ work_mode: 'remote' })}
+            />
+            <JobRecommendationSection
+              title="Jobs based on your activity"
+              subtitle="Roles many candidates like you are exploring."
+              jobs={activityJobs}
+              onOpenJob={openJob}
+              onShowAll={() => showAll({})}
+            />
+            <JobRecommendationSection
+              title="Featured recommendations"
+              subtitle="Fresh opportunities from top employers."
+              jobs={featuredJobs}
+              onOpenJob={openJob}
+              onShowAll={() => showAll({})}
+            />
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+//  JOBS BROWSE / DETAIL EXPERIENCE
+// ─────────────────────────────────────────────
+export function JobsBrowsePage() {
+  const location = useLocation();
+  const initialFilters = location.state?.filters;
+  const initialJobId = location.state?.jobId;
   const [filters, setFilters] = useState({
     keyword: '', location: '', employment_types: [], seniority_level: '', work_mode: '', industry: '',
   });
@@ -116,7 +326,18 @@ export default function JobsPage() {
   }, [selected]);
 
   // Load all jobs on first visit
-  useEffect(() => { handleSearch(1, {}); }, []); // eslint-disable-line
+  useEffect(() => {
+    const nextFilters = initialFilters ? { ...filters, ...initialFilters } : {};
+    if (initialFilters) {
+      setFilters(prev => ({ ...prev, ...initialFilters }));
+    }
+    handleSearch(1, nextFilters);
+  }, []);
+
+  useEffect(() => {
+    if (!initialJobId || jobs.length === 0) return;
+    handleView(initialJobId);
+  }, [initialJobId, jobs.length]);
 
   const set = (k, v) => setFilters(f => ({ ...f, [k]: v }));
   const setAndSearch = (k, v) => {
