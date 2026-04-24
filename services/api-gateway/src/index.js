@@ -45,6 +45,7 @@ const PUBLIC_PATHS = [
   '/api/connections',
   '/api/agents',
   '/api/skills',
+  '/api/posts',
 ];
 
 // Auth middleware — skip public paths
@@ -66,6 +67,7 @@ const services = {
   '/api/events':       process.env.ANALYTICS_SERVICE_URL   || 'http://analytics-service:3006',
   '/api/agents':       process.env.AI_AGENT_URL            || 'http://ai-agent-service:8000',
   '/api/skills':       process.env.AI_AGENT_URL            || 'http://ai-agent-service:8000',
+  '/api/posts':        process.env.PROFILE_SERVICE_URL     || 'http://profile-service:3001',
 };
 
 Object.entries(services).forEach(([path, target]) => {

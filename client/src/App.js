@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import LoginPage        from './pages/LoginPage';
+import HomeFeedPage     from './pages/HomeFeedPage';
+import CareerResourcesPage from './pages/CareerResourcesPage';
 import JobsPage, { JobsBrowsePage } from './pages/JobsPage';
 import ProfilePage      from './pages/ProfilePage';
 import MessagesPage     from './pages/MessagesPage';
@@ -54,8 +56,9 @@ export default function App() {
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', background: '#f3f2ef', minHeight: '100vh' }}>
       <nav style={{ background: '#0a66c2', padding: '0 24px', display: 'flex', alignItems: 'center', gap: 4, height: 52, position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-        <Link to={isRecruiter ? '/recruiter' : '/jobs'} style={{ marginRight: 16, textDecoration: 'none' }}><BrandMark /></Link>
+        <Link to={isRecruiter ? '/recruiter' : '/home'} style={{ marginRight: 16, textDecoration: 'none' }}><BrandMark /></Link>
 
+        {!isRecruiter && <Link to="/home"        style={navLinkStyle}>Home</Link>}
         {!isRecruiter && <Link to="/jobs"        style={navLinkStyle}>Jobs</Link>}
         {!isRecruiter && <Link to="/connections" style={navLinkStyle}>Connections</Link>}
         {!isRecruiter && <Link to="/messages"    style={navLinkStyle}>Messages</Link>}
@@ -79,7 +82,10 @@ export default function App() {
 
       <div style={contentWrapperStyle}>
         <Routes>
-          <Route path="/"            element={<Navigate to="/jobs" replace />} />
+          <Route path="/"            element={<Navigate to={isRecruiter ? '/recruiter' : '/home'} replace />} />
+          <Route path="/home"        element={<HomeFeedPage />} />
+          <Route path="/home/saved"  element={<HomeFeedPage />} />
+          <Route path="/career-resources" element={<CareerResourcesPage />} />
           <Route path="/jobs"        element={<JobsPage />} />
           <Route path="/jobs/browse" element={<JobsBrowsePage />} />
           <Route path="/profile"     element={<ProfilePage />} />

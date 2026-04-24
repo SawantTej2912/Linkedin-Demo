@@ -9,5 +9,6 @@ app.use(express.json());
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'profile-service' }));
 app.use('/members', profileRoutes);
 app.use('/recruiters', require('./routes/recruiterRoutes'));
+app.use('/posts', require('./routes/postRoutes'));
 
 app.listen(PORT, () => console.log(`Profile Service on port ${PORT}`));

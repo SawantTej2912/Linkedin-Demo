@@ -230,6 +230,50 @@ const CHAT_MESSAGES = [
   "We were really impressed with your {skill} experience in the interview.",
 ];
 
+const FEED_POSTS = [
+  { type: 'career_update', content: `Excited to share that I joined Nimbus Labs as a Software Engineer this week.\nHuge thanks to everyone who helped with prep and referrals.\nLooking forward to building products that impact real customers.` },
+  { type: 'hiring', content: `We're hiring 3 backend engineers in Seattle and Austin.\nIf you enjoy distributed systems, Kafka, and high-scale APIs, let's talk.\nPlease DM me or apply through our careers page. #hiring #backend` },
+  { type: 'project', content: `Shipped a real-time alerting pipeline using Kafka + Redis Streams.\nWe reduced event processing latency from 2.4s to under 300ms.\nGreat reminder that small architecture choices compound fast. #dataengineering` },
+  { type: 'learning', content: `Spent the weekend revisiting system design fundamentals.\nA simple takeaway: optimize for debuggability before micro-optimizations.\nBetter logs saved us more than any fancy abstraction.` },
+  { type: 'general', content: `Consistency beats intensity.\n30 focused minutes every day on your craft adds up faster than occasional all-nighters.\nWhat habit helped your career the most?` },
+  { type: 'job_update', content: `Looking for Summer 2026 software engineering internships.\nStrong with React, Node.js, and SQL. Open to remote or Bay Area roles.\nWould appreciate referrals. #internship #opentowork` },
+  { type: 'career_update', content: `Today marks 1 year at my current company.\nI went from maintaining one service to owning a full platform lane.\nMentorship made the biggest difference.` },
+  { type: 'hiring', content: `My team is hiring data engineers who love clean data contracts.\nStack: Python, Spark, Airflow, BigQuery.\nIf this sounds like your lane, reach out. #hiring #datascience` },
+  { type: 'project', content: `We launched a resume-parsing service this sprint.\nThroughput now handles 10x peak traffic without queue backlogs.\nProud of the team execution.` },
+  { type: 'learning', content: `Recently learned a practical way to run better postmortems:\nfocus on decision context, not only outcomes.\nBlameless analysis creates better systems.` },
+  { type: 'general', content: `Career coaches often say \"tell your story with outcomes\".\nThat advice transformed how I write experience bullets.\nNumbers + context > buzzwords.` },
+  { type: 'career_update', content: `After months of interviews, I accepted an offer as a Data Engineer.\nGrateful for peers who reviewed my SQL and system design answers.\nOnward and upward. 🚀` },
+  { type: 'job_update', content: `Open to full-time roles in platform engineering.\nBuilt CI/CD tooling and internal developer portals in my last project.\nHappy to connect with recruiters. #opentowork` },
+  { type: 'hiring', content: `Hiring: Technical Recruiter with strong engineering hiring experience.\nYou'll partner with product + infra teams across North America.\nDM for details. #recruiting #hiring` },
+  { type: 'project', content: `Small win worth sharing:\nwe added idempotency keys to application submission APIs.\nDuplicate submissions dropped to near zero.` },
+  { type: 'learning', content: `If you're new to cloud, start with one service and trace one request end-to-end.\nThat single exercise teaches networking, auth, and observability together.\nIt helped me ramp much faster.` },
+  { type: 'general', content: `A reminder for students:\nprojects you can explain deeply beat long lists of shallow tutorials.\nDepth shows in interviews.` },
+  { type: 'career_update', content: `Promoted to Senior Engineer this quarter.\nThe biggest shift wasn't coding speed, it was making teammates faster.\nThanks to everyone who trusted me with leadership opportunities.` },
+  { type: 'hiring', content: `We're expanding our machine learning platform team.\nNeed engineers with model serving + feature store experience.\nRemote in US/Canada. #machinelearning #hiring` },
+  { type: 'project', content: `Wrapped up a migration from REST polling to event-driven updates.\nCustomer-facing dashboards now feel truly live.\nArchitecture docs paid off during rollout.` },
+  { type: 'learning', content: `Interview prep note:\npractice explaining trade-offs, not only final answers.\nSenior interview loops evaluate decision quality.` },
+  { type: 'general', content: `Career growth is usually nonlinear.\nQuiet months of learning often precede visible breakthroughs.\nKeep showing up.` },
+  { type: 'job_update', content: `Final-year CS student actively looking for backend internships.\nComfortable with Java, Spring Boot, and relational modeling.\nWould value intros. #students #internship` },
+  { type: 'career_update', content: `Started mentoring two early-career engineers this month.\nSeeing their confidence grow has been deeply rewarding.\nLeadership is a skill you practice daily.` },
+  { type: 'hiring', content: `Our career coaching team is hiring part-time mentors.\nIf you enjoy guiding candidates on resumes and interviews, we'd love to chat.\nFlexible remote setup.` },
+  { type: 'project', content: `Built a lightweight internal analytics dashboard in one sprint.\nCombined Postgres views with cached aggregations for sub-second load times.\nSimple tools, strong outcome.` },
+  { type: 'learning', content: `I used to underestimate writing.\nClear technical writing has helped me align product, design, and engineering faster than any meeting.\nWorking on this every week.` },
+  { type: 'general', content: `Networking tip that worked for me:\ncomment thoughtfully on posts in your domain before asking for referrals.\nRelationships compound.` },
+];
+
+const FEED_COMMENTS = [
+  'Congrats! Wishing you the best in the new role.',
+  'This is a great breakdown. Thanks for sharing.',
+  'Would love to learn more about how you approached this.',
+  'Thanks for posting this - very relevant right now.',
+  'Strong insights here. Saving this for my team.',
+  'Appreciate the practical detail in this post.',
+  'Love seeing this kind of execution-focused update.',
+  'Well said. This resonates with my current project.',
+  'Huge +1 to this. We saw similar results internally.',
+  'Great perspective. Thanks for taking the time to write it.',
+];
+
 // ── Utility / Helper Functions ────────────────────────────────────────────────
 // These small functions help us avoid repeating code
 
@@ -333,6 +377,63 @@ async function seed() {
   const DEMO_HASH = await hashPassword('Demo@1234');
 
   try {
+    await conn.execute(`
+      CREATE TABLE IF NOT EXISTS posts (
+        post_id        VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+        author_id      VARCHAR(36) NOT NULL,
+        content        TEXT NOT NULL,
+        post_type      ENUM('general','job_update','project','hiring','learning','career_update') DEFAULT 'general',
+        likes_count    INT DEFAULT 0,
+        comments_count INT DEFAULT 0,
+        created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (author_id) REFERENCES members(member_id) ON DELETE CASCADE,
+        INDEX idx_author (author_id),
+        INDEX idx_created_at (created_at),
+        INDEX idx_post_type (post_type)
+      )
+    `);
+    await conn.execute(`
+      CREATE TABLE IF NOT EXISTS post_likes (
+        like_id      VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+        post_id      VARCHAR(36) NOT NULL,
+        member_id    VARCHAR(36) NOT NULL,
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_post_member_like (post_id, member_id),
+        FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+        FOREIGN KEY (member_id) REFERENCES members(member_id) ON DELETE CASCADE,
+        INDEX idx_like_post (post_id),
+        INDEX idx_like_member (member_id)
+      )
+    `);
+    await conn.execute(`
+      CREATE TABLE IF NOT EXISTS post_comments (
+        comment_id    VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+        post_id       VARCHAR(36) NOT NULL,
+        author_id     VARCHAR(36) NOT NULL,
+        content       TEXT NOT NULL,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+        FOREIGN KEY (author_id) REFERENCES members(member_id) ON DELETE CASCADE,
+        INDEX idx_comment_post (post_id),
+        INDEX idx_comment_author (author_id),
+        INDEX idx_comment_created (created_at)
+      )
+    `);
+    await conn.execute(`
+      CREATE TABLE IF NOT EXISTS saved_posts (
+        save_id       VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+        post_id       VARCHAR(36) NOT NULL,
+        member_id     VARCHAR(36) NOT NULL,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_saved_post_member (post_id, member_id),
+        FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+        FOREIGN KEY (member_id) REFERENCES members(member_id) ON DELETE CASCADE,
+        INDEX idx_saved_member (member_id),
+        INDEX idx_saved_post (post_id)
+      )
+    `);
 
     // ──────────────────────────────────────────────────────────────────────────
     //  STEP 0: CLEAN DATABASE  (skipped when --keep flag is passed)
@@ -352,9 +453,13 @@ async function seed() {
         'application_status_history',
         'application_notes',
         'applications',
+        'saved_posts',
+        'post_comments',
+        'post_likes',
         'saved_jobs',
         'job_skills',
         'jobs',
+        'posts',
         'connections',
         'connection_requests',
         'profile_views',
@@ -586,6 +691,82 @@ async function seed() {
 
       showProgress('Members', i + 1, NUM_EXTRA_MEMBERS);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  STEP 3B: FEED POSTS
+    //  Realistic LinkedIn-style text-only posts for the home feed.
+    // ──────────────────────────────────────────────────────────────────────────
+    console.log(`\n📰 Creating ${FEED_POSTS.length} feed posts...`);
+    const additionalAuthors = pickN(
+      allMemberIds.filter(id => !demoMemberIds.includes(id)),
+      10
+    );
+    const feedAuthors = [...demoMemberIds, ...additionalAuthors];
+
+    const seededPostIds = [];
+    for (let i = 0; i < FEED_POSTS.length; i++) {
+      const post = FEED_POSTS[i];
+      const authorId = feedAuthors[i % feedAuthors.length];
+      const hoursAgo = randInt(1, 24 * 14);
+      const createdAt = new Date(Date.now() - hoursAgo * 3600000);
+      const postId = uuidv4();
+
+      await conn.execute(
+        `INSERT INTO posts
+           (post_id, author_id, content, post_type, likes_count, comments_count, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          postId,
+          authorId,
+          post.content,
+          post.type,
+          0,
+          0,
+          createdAt,
+          createdAt,
+        ]
+      );
+      seededPostIds.push(postId);
+    }
+    console.log('  ✓ Feed posts created');
+
+    console.log('\n💙 Seeding likes and comments for feed posts...');
+    for (const postId of seededPostIds) {
+      const likeTarget = randInt(3, 24);
+      const commentTarget = randInt(1, 4);
+      const likedMembers = new Set();
+      for (let i = 0; i < likeTarget; i++) {
+        const memberId = pick(allMemberIds);
+        if (likedMembers.has(memberId)) continue;
+        likedMembers.add(memberId);
+        await conn.execute(
+          'INSERT IGNORE INTO post_likes (like_id, post_id, member_id) VALUES (?, ?, ?)',
+          [uuidv4(), postId, memberId]
+        );
+      }
+
+      for (let i = 0; i < commentTarget; i++) {
+        const authorId = pick(allMemberIds);
+        const content = pick(FEED_COMMENTS);
+        const commentHoursAgo = randInt(1, 24 * 10);
+        const commentAt = new Date(Date.now() - commentHoursAgo * 3600000);
+        await conn.execute(
+          `INSERT INTO post_comments
+             (comment_id, post_id, author_id, content, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [uuidv4(), postId, authorId, content, commentAt, commentAt]
+        );
+      }
+
+      await conn.execute(
+        `UPDATE posts p
+         SET likes_count = (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.post_id),
+             comments_count = (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.post_id)
+         WHERE p.post_id = ?`,
+        [postId]
+      );
+    }
+    console.log('  ✓ Feed likes/comments seeded');
 
     // ──────────────────────────────────────────────────────────────────────────
     //  STEP 4: BULK RECRUITERS
